@@ -18,7 +18,7 @@ The WRR retains the advantage of round-robin in eliminating starvation and also 
 3. sys_get_children_pid (378): obtain pid of the children process to set WRR as the default scheduling policy  
   
 ####Weighted round robin  
-1.	Main algorithm is implemented in kernel/sched_wrr.c
+1.	Main algorithm is implemented in _kernel/sched_wrr.c_
 
 2.	The priority of the scheduling class.  
 		```  
@@ -131,20 +131,31 @@ The WRR retains the advantage of round-robin in eliminating starvation and also 
 	1. The more weighted appliciton can complete its job first. 
 	2. A very short time slice needs frequent scheduling(context switch), resulting in performance degradation
 	3. If applications are assigned the same weight, i.e., the same time slice, they obviously results the similar execution time. 
+	4. When compared to the sigle core, dual (or more) core can make the job finished first; so, we can infer that Load balancing is crucial to the performace for multiprocessor systems.
 	```
 	
 2. Test cases and results
+1) single core with two processes
 	```
 	                     weight(1)      weight(20) 
 	execution time(s)      34.55          17.22
 	```
 	```
 	                     weight(10)     weight(20) 
-	execution time(s)      21.471         27.549
+	execution time(s)      27.549         27.549
 	```
 	```
-	                     weight(10)     weight(20) 
+	                     weight(20)     weight(20) 
 	execution time(s)      27.538         27.543
+	```	
+	```
+	                      weight(5)     weight(5) 
+	execution time(s)      37.913         37.926
+	```
+2) dual core with two processes	
+	```
+	                      weight(1)     weight(20) 
+	execution time(s)      20.41         14.072
 	```	
 3. Load balancing
   The following log messages shows that our implemenation for the load balancing works correctly! 
