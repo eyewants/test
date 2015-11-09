@@ -130,7 +130,7 @@ The WRR retains the advantage of round-robin in eliminating starvation and also 
 	We have run two differently weighted test programs(trial1 and trial2) and reach the the following conclusion: 
 	1. The more weighted appliciton can complete its job first. 
 	2. A very short time slice needs frequent scheduling(context switch), resulting in performance degradation
-	3. If applications are assigned the same weight, i.e., the same time slice, they obviously results the similar execution time. 
+	3. If applications are assigned the same weight, i.e., the same time slice, they obviously results in the similar execution time. 
 	4. When compared to the sigle core, dual (or more) core can make the job finished first; so, we can infer that Load balancing is crucial to the performace for multiprocessor systems.
 	```
 	
@@ -142,7 +142,7 @@ The WRR retains the advantage of round-robin in eliminating starvation and also 
 	```
 	```
 	                     weight(10)     weight(20) 
-	execution time(s)      27.549         27.549
+	execution time(s)      27.549         21.47
 	```
 	```
 	                     weight(20)     weight(20) 
@@ -186,7 +186,7 @@ The WRR retains the advantage of round-robin in eliminating starvation and also 
 	```
 	```
 	gettimeofday(&after, 0);
-  elapsed = (after.tv_sec-before.tv_sec)*1000000 + after.tv_usec-before.tv_usec;
-  printf("%s(%d) exit:%f\n",argv[0], getpid(),elapsed/1000000.0);	
+	elapsed = (after.tv_sec-before.tv_sec)*1000000 + after.tv_usec-before.tv_usec;
+	printf("%s(%d) exit:%f\n",argv[0], getpid(),elapsed/1000000.0);	
 	```
 
