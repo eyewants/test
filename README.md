@@ -1,192 +1,191 @@
-#aos-team 11 (Project 3)
+#aos-team 11 (Project 4)
+##Analyzing Memory Duplication in Tizen
 
-##Weighted Round-Robin (WRR)
+#####Requirements of project 4
+The main purpose of this project is to analyze page-level duplication in Tizen to report how efficiently Tizen uses memory. The project has two parts: 1) accurately measuring the level of memory duplication by building a tool, and 2) finding out the root causes of the problem if exists. The second part is for extra credit.
 
-WRR CPU Scheduling algorithm is based on the round-robin and priority scheduling algorithms. 
-The WRR retains the advantage of round-robin in eliminating starvation and also integrates priority scheduling
+##Introduction
+To detect page duplication, our tool, _MDdetector_, has two parts: _Page Fetcher_ and _Duplication analyzer_.  
+Page Fetcher is our kernel module implementation, obtaining the contents of pages and computing the hash value of the page; and then, saving the hash value along with its physical frame number.  
+For this task, Page Fetcher gets the pointer of virtaul memorty address by traversing _vm_area_struct_ structure of each task and translates the virtual address to the physical one by looking up the page table in a process called a page walk. In our implementation this page walking is performed by means of the function _follow_page_. This function returns the mapped _struct page *_, or NULL if no mapping exists. After temporarily mapping user space pages to the kernel with _kmap_atomic_, we read the page contents and calculate the hash values with _jhash2_ function. In addition, the physcial frame number of the page, _pfn_, is also calculated by _page_to_pfn_. Page Fetcher saves all this information to the file for a further analysis of the page duplication.  
+Based on this file, Duplication Analyzer, being implemented in Python code, can report the number of duplicated pages.
 
-#####Requirements of project 3
-1.	Multiprocessor (SMP) must be supported 
-2.	Default time slice is 10ms and weight range lies in between 1 and 20. 
-3.	Periodic load balancing.
-4.	Selecting a run-queue for a new task
 
-##Implementation
-####System calls  
-1. sys_sched_setweight (376): sets the SCHED_WRR weight of process  
-2. sys_sched_getweight (377): obtains the SCHED_WRR weight of a process  
-3. sys_get_children_pid (378): obtain pid of the children process to set WRR as the default scheduling policy  
-  
-####Weighted round robin  
-1.	Main algorithm is implemented in _kernel/sched_wrr.c_
-
-2.	The priority of the scheduling class.  
-		```  
-    stop_sched_class → rt_sched_class → wrr_sched_class → fair_sched_class → idle_sched_class → NULL
-		```  
-
-3.	data structure  
-  1)	struct sched_class wrr_sched_class  
-  2)	struct wrr_rq : WRR- related fields in a runqueue   
-      
-4.	load-balance  
-  
-  1) Active balancing is performed regularly on each CPU, 500ms in this project  
- 
-  a. Registering IRQ  
-    SCHED_WRR_SOFTIRQ is defined in interrupt.h and its handler, do_load_balance, is newly registered in kernel/sched.c as following.  
-  
-  ```
-  open_softirq(SCHED_WRR_SOFTIRQ, do_load_balance);  
-  ```
-  
-  b. Periodic call  
-  
-  timer_tick()  
-  → update_process_times()   
-  → scheduler_tick()  
-  → trigger_load_balance_wrr()  
-  → raise_softirq(SCHED_WRR_SOFTIRQ);  
-  → do_load_balance  
-
-  2)	Idle balancing  
-  Not supported
-  
-  3) Selecting a run-queue for a new task  
-  _select_task_rq_wrr()_ supports this feature
-
-####Test Program(Trial)
-1. Description  
-	It calculates prime factorization number from 2 ~ 10000001 continuously  
-2. Code location:
-	```
-	proj3-tizen/trial/trial.c
-	```
-3. How to compile the trial  
-   1. Change directory to the code location, _proj3-tizen/trial_  
-   2. Use the following option to compile  
-		```	
-		make trial
-		```  
-   3. In order to copy the trial to the device, run the sdb with a shell using following command.  
-		```
-		sbd push trial <target location>
-		```
-    Or,  use the following make option, copying the daemon into _/home/developer_ directory of the device.
-		```
-		make push
-		```
-	
-####Dynamic Scheduling Policy Change(Systemd_wrr)
-1. Description  
-	It dynamically changes systemd and it's all child processes' scheduling class from SCHED_NORMAL to SCHED_WRR.
-	For this operation, we have added additional system call, sys_get_children_pid.
-	
+##Usage
+####Page Fetcher  
+1. Loadable Kernel Module(LKM)  
 2. Code location:  
 	```
-	proj3-tizen/trial/systemd_wrr.c
-	```
-3. How to compile the programs  
-   1. Change directory to the code location, _proj3-tizen/trial_  
-   2. Use following options to compile each program  
+	proj4-tizen/linux-3.0/pageFetcher/pageFetcher.c
+	```  
+3. How to use the module pageFetcher. 
+	1. Go to pageFetcher location
+	 	```
+		mv linux-3.0/pageFetcher
 		```
-		make systemd_wrr
+	2. Complie the module 
 		```
-   3. In order to copy the programs to the device, run the sdb with a shell using following command.  
+		make 
 		```
-		sbd push <application> <target location>
+	3. Copy the module to the device
 		```
-    Or,  use the following make option, copying all three programs into _/home/developer_ directory of the device.  
+		sdb push pageFetcher.ko /home/developer 
 		```
-		make push
+
+	4. Insert the module as follows in sdb shell:
+		```
+		sdb root on
+		sdb shell insmod /home/developer/pageFetcher.ko
 		```
 	
-####Scripts
-1. cpu_on/off.sh: trun on/off cpus to configure the number of runnable cpu
+	5. Remove the module as follows in sdb shell:
+		```	
+		sdb root on
+		sdb shell rmmod pageFetcher.ko
+		```
+	4. pageFetcher gerneates the output file named _result.dump_ in the form of tuple (Physical page frame number, Virtual address, Hash value)
+	
+		```	
+		comm:systemd, pid:1  
+		0x0007fe00, 0x00008000, 4234942503  
+		0x0007fe01, 0x00009000, 2972783174  
+		0x0007fe02, 0x0000a000, 3427527307  
+		0x0007fe03, 0x0000b000, 1905900417  
+		...  
+		comm:Xorg, pid:2094  
+		0x0007e355, 0x00008000, 1779203799  
+		0x0007e356, 0x00009000, 3539347856  
+		0x0007e357, 0x0000a000, 3039845387  
+		0x0007e358, 0x0000b000, 2443536629  
+		```
+ 
+####Memory Duplication Analayzer
+1. Python script  
+2. Code location:    
+	```  
+	proj4-tizen/linux-3.0/MemoryDuplicationAnalzyer/MemoryDuplicationAnalzyer.py
+	```    
+	
+3. How to use the Memory Duplication Analzyer
+	1. Change the diectory to MemoryDuplicationAnalzyer location
+	 	```
+		mv MemoryDuplicationAnalzyer
+		```
+	2. Get dump file, being generated by PageFetcher, from device. 
+		```  
+		sdb pull /home/developer/result.dump . 
+		```
+	3. running the MDanalzyer
+		```
+		python MDanalzyer.py
+		```
 
-	```
-	proj3-tizen/linux-3.0/cpu_on.off
-	```
-	```
-	  1 sdb root on
-	  2 sdb shell 'echo 0 > /sys/devices/system/cpu/cpu1/online'
-	  3 sdb shell 'echo 0 > /sys/devices/system/cpu/cpu2/online'
- 	  4 sdb shell 'echo 0 > /sys/devices/system/cpu/cpu3/online'
- 	  5 sdb shell 'cat /sys/devices/system/cpu/cpu0/online'
- 	  6 sdb shell 'cat /sys/devices/system/cpu/cpu1/online'
- 	  7 sdb shell 'cat /sys/devices/system/cpu/cpu2/online'
- 	  8 sdb shell 'cat /sys/devices/system/cpu/cpu3/online'
- 	  9 sdb shell 'echo performance > /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor'
-	  10 sdb shell 'cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor'
-	```
+	4. Test result will be showin in the ouput file, _MDAnalyzer_output.txt_ as follows.
+		```  
+		1. Test Results  
+		==========================================  
+		Total pages: 95525  
+		The number of pages shared: 58059  
+		The number of pages duplicated: 4682  
+		==========================================
+		
+		2. Duplication Table Structure  
+		-----------------------------------  
+		Hash1  
+		  Physical page frame number  
+		    Task(Pid)  
+		Hash2  
+		  Physical page frame number  
+		    Task(Pid)  
+		...  
+		-----------------------------------  
+
+		3. Duplication Table  
+		-----------------------------------  
+		2952775000  
+		  0x0007482d  
+		    launchpad-proce(2321)  
+		  0x000708ce   
+		    launchpad-proce(4606)  
+		1119025011  
+		  0x00078fc2  
+		    Xorg(2094)  
+		  0x0007afc2  
+		    Xorg(2094)  
+		  0x0007dccf  
+		    Xorg(2094)  
+		```  
+
+##Implementation
+####Page Fetcher
+1. Working flow  
+  for_each_process(task)  
+  → struct mm_struct *mm;   
+  → vm_area_struct *mmap (vm_start - vm_end)  
+  → struct page *follow_page: page table walking  
+  → kmap_atomic(page): temporarily create a kernel-space address for specific high-memory pages  
+  → calculate hash value of a page with jhash2 
+  → page_to_pfn: page frame number  
+  → save all memory information to the file: physical frame number
+
+2. data structures and functions  
+	```  
+	Defined as a function in /mm/memory.c    
+	/**    
+ 	* follow_page - look up a page descriptor from a user-virtual address  
+ 	* @vma: vm_area_struct mapping @address  
+	* @address: virtual address to look up  
+ 	* @flags: flags modifying lookup behaviour  
+ 	*  
+ 	* Returns the mapped (struct page *), %NULL if no mapping exists, or  
+ 	* an error pointer if there is a mapping to something not represented  
+ 	* by a page descriptor (see also vm_normal_page()).  
+ 	*/  
+	struct page *follow_page(struct vm_area_struct *vma, unsigned long address,
+			unsigned int flags)
+	```  	 
+	```  
+	Defined as a function in: include/linux/jhash.h  
+ 
+	/* jhash2 - hash an array of u32's  
+	 * @k: the key which must be an array of u32's  
+	 * @length: the number of u32's in the key  
+	 * @initval: the previous hash, or an arbitray value  
+	 *  
+	 * Returns the hash value of the key.  
+	 */  
+	 static inline u32 jhash2(const u32 *k, u32 length, u32 initval)  
+  	```  
+  	
+####Memory Duplication Analzyer
+1. Memory Duplication Analyzer parses input file, _result.dump_ generated by pageFetcher and gets the hash value of a physical page.
+2. To detemine the duplication, it puts hash values to secondary hash list with element 5000.
+3. After parsing the input file, it shows the duplication rate and generates the duplication table. 
 
 
-##Discussion
+##Discussion  
 ####Investiageion
-1. Track how long this program takes to execute with different weightings set and plot the result. You should choose a number to factor that will take sufficiently long to calculate the prime factorization of, such that it demonstrates the effect of weighting has on its execution time
+1. accurately measuring the level of memory duplication by building a tool
+2. finding out the root causes of the problem if exists. The second part is for extra credit
 
-	```
-	To figure out the relation between the execution time of a process and its time slice, being propotional to the weight value, 
-	We have run two differently weighted test programs(trial1 and trial2) and reach the the following conclusion: 
-	1. The more weighted appliciton can complete its job first. 
-	2. A very short time slice needs frequent scheduling(context switch), resulting in performance degradation
-	3. If applications are assigned the same weight, i.e., the same time slice, they obviously results in the similar execution time. 
-	4. When compared to the sigle core, dual (or more) core can make the job finished first; so, we can infer that Load balancing is crucial to the performace for multiprocessor systems.
-	```
-	
-2. Test cases and results
-1) single core with two processes
-	```
-	                     weight(1)      weight(20) 
-	execution time(s)      34.55          17.22
-	```
-	```
-	                     weight(10)     weight(20) 
-	execution time(s)      27.549         21.47
-	```
-	```
-	                     weight(20)     weight(20) 
-	execution time(s)      27.538         27.543
-	```	
-	```
-	                      weight(5)     weight(5) 
-	execution time(s)      37.913         37.926
-	```
-2) dual core with two processes	
-	```
-	                      weight(1)     weight(20) 
-	execution time(s)      20.41         14.072
-	```	
-3. Load balancing
-  The following log messages shows that our implemenation for the load balancing works correctly! 
+####test results  
+1. without test applications  
+	```  
+	total pages            89,921     
+	shared pages           55,140   
+	duplicated pages        4,153
+	duplication rate:       4.61%
+	```  
 
-	```
-  2320 [  197.389367] [AOS]CPU0's WEIGHT20:
-  2321 [  197.389396] trial4(2499)'s weight(10)
-  2322 [  197.389424] trial7(2501)'s weight(10)
+2. with test application  
+	We got the duplication test results with running following applications: download manager, eventmanager, bluetoothchat, calculator, contacts, filemanager, media, notification manager, pinao, scheduler, sensor are launched at one before fetching page info
 
-  2324 [  197.389465] [AOS]CPU1's WEIGHT40:
-  2325 [  197.389491] trial5(2500)'s weight(10)
-  2326 [  197.389519] trial8(2506)'s weight(10)
-  2327 [  197.389546] trial11(2509)'s weight(10)
-  2328 [  197.389573] trial10(2512)'s weight(10)
+	```  
+	total pages            196,605  
+	shared pages           108,482    
+	duplicated pages        27,930
+	duplication rate:       14.20%
+	```  
 
-  2330 [  197.389615] [AOS]CPU2's WEIGHT20:
-  2331 [  197.389640] trial6(2498)'s weight(10)
-  2332 [  197.389668] trial3(2494)'s weight(10)
-
-  2334 [  197.389708] [AOS]CPU3's WEIGHT10:
-  2335 [  197.389734] trial12(2511)'s weight(10)
-	```
-
-4. Time measurement
-	We added time measurement code to the application
-	```
-	proj3-tizen/trial/trial.c
-	```
-	```
-	gettimeofday(&after, 0);
-	elapsed = (after.tv_sec-before.tv_sec)*1000000 + after.tv_usec-before.tv_usec;
-	printf("%s(%d) exit:%f\n",argv[0], getpid(),elapsed/1000000.0);	
-	```
-
+##References  
+1. ARCANGELI, A., EIDUS, I., AND WRIGHT, C. Increasing memory density by using ksm. In Proceedings of the linux symposium (2009), pp. 19–28.
